@@ -1,0 +1,21 @@
+# Build artifacts
+target/
+
+# Development backups
+backup/
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Rust tooling
+*.pyc
+__pycache__/
+/docs/

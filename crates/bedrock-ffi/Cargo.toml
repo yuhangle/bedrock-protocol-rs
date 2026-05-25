@@ -1,0 +1,14 @@
+[package]
+name = "bedrock-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "C FFI bindings for the Bedrock protocol library"
+
+[lib]
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+bedrock-protocol = { path = "../bedrock-protocol" }
+bedrock-nbt = { path = "../bedrock-nbt" }
+libc = "0.2"

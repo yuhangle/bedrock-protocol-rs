@@ -1,0 +1,99 @@
+name: Nightly Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cargo build -p bedrock-ffi --release
+          mkdir -p package
+          cp target/release/libbedrock_ffi.so package/
+          cp target/release/libbedrock_ffi.a package/
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo build -p bedrock-ffi --release
+          New-Item -ItemType Directory -Path package -Force
+          Copy-Item target/release/bedrock_ffi.dll package/
+          Copy-Item target/release/bedrock_ffi.dll.lib package/
+          Copy-Item target/release/bedrock_ffi.lib package/
+          Copy-Item target/release/bedrock_ffi.pdb package/ -ErrorAction SilentlyContinue
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-${{ runner.os }}
+          path: package/
+          retention-days: 3
+
+  release:
+    name: Publish Nightly Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: nightly-*
+          merge-multiple: true
+          path: artifacts
+
+      - name: Package release files
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          DATE_TAG=$(date -u +'%Y-%m-%d')
+          mkdir -p dist
+
+          mv artifacts/libbedrock_ffi.* dist/ 2>/dev/null || true
+          mv artifacts/bedrock_ffi.* dist/ 2>/dev/null || true
+
+          ls -la dist/
+
+      - name: Create nightly release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DATE_TAG=$(date -u +'%Y-%m-%d')
+
+          gh release delete nightly --yes 2>/dev/null || true
+          git push --delete origin nightly 2>/dev/null || true
+
+          gh release create nightly \
+            --title "Nightly Build $DATE_TAG" \
+            --notes "Auto-built from commit ${{ github.sha }} on $DATE_TAG" \
+            --target ${{ github.sha }} \
+            --prerelease \
+            dist/*

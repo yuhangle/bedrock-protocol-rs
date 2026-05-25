@@ -1,0 +1,19 @@
+[package]
+name = "bedrock-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Minecraft Bedrock Edition protocol definition"
+
+[dependencies]
+bedrock-common = { path = "../bedrock-common" }
+bedrock-binary-stream = { path = "../bedrock-binary-stream" }
+bedrock-nbt = { path = "../bedrock-nbt", optional = true }
+
+[features]
+default = ["generated"]
+generated = []
+
+[build-dependencies]
+bedrock-codegen = { path = "../bedrock-codegen" }
+bedrock-protocol-data = { path = "../bedrock-protocol-data" }

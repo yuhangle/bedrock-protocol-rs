@@ -1,0 +1,17 @@
+[workspace]
+members = [
+    "crates/bedrock-common",
+    "crates/bedrock-binary-stream",
+    "crates/bedrock-protocol-schema",
+    "crates/bedrock-codegen",
+    "crates/bedrock-protocol",
+    "crates/bedrock-ffi",
+    "crates/bedrock-protocol-data",
+    "crates/bedrock-nbt",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"

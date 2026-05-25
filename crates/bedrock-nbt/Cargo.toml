@@ -1,0 +1,8 @@
+[package]
+name = "bedrock-nbt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pure Rust NBT implementation for Minecraft Bedrock Edition"
+
+[dependencies]

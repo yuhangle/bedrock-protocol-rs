@@ -1,0 +1,150 @@
+name: Build bedrock-ffi
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish Release'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      release_type:
+        description: 'Release type'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - 'development'
+          - 'release'
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cargo build -p bedrock-ffi --release
+          echo "Build artifacts:"
+          ls -la target/release/libbedrock_ffi.*
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo build -p bedrock-ffi --release
+          Get-ChildItem target/release/bedrock_ffi.*
+
+      # ===== Upload artifacts =====
+      - name: Upload artifact (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: bedrock-ffi-linux
+          path: |
+            target/release/libbedrock_ffi.so
+            target/release/libbedrock_ffi.a
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: bedrock-ffi-windows
+          path: |
+            target/release/bedrock_ffi.dll
+            target/release/bedrock_ffi.dll.lib
+            target/release/bedrock_ffi.lib
+            target/release/bedrock_ffi.pdb
+
+  release:
+    name: Publish Release
+    needs: build
+    if: ${{ github.event.inputs.publish_release == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: get_version
+        run: |
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          GIT_COMMIT_COUNT=$(git rev-list --count HEAD)
+          GIT_SHORT_HASH=$(git rev-parse --short HEAD)
+
+          if [ "${{ github.event.inputs.release_type }}" = "release" ]; then
+            PROJECT_VERSION="${CARGO_VERSION}"
+            TAG_VERSION="v${CARGO_VERSION}"
+            RELEASE_TITLE="Release v${CARGO_VERSION}"
+          else
+            LAST_STABLE_TAG=$(git describe --tags --match="v[0-9]*" --exclude="*-*" --abbrev=0 2>/dev/null || echo "")
+            if [ -n "$LAST_STABLE_TAG" ]; then
+              COMMIT_SINCE=$(git rev-list --count "${LAST_STABLE_TAG}..HEAD")
+            else
+              COMMIT_SINCE=$GIT_COMMIT_COUNT
+            fi
+            PROJECT_VERSION="${CARGO_VERSION}-alpha.${COMMIT_SINCE}+${GIT_SHORT_HASH}"
+            TAG_VERSION="v${CARGO_VERSION}-alpha.${COMMIT_SINCE}"
+            RELEASE_TITLE="Development Build ${PROJECT_VERSION}"
+          fi
+
+          echo "VERSION=${PROJECT_VERSION}" >> $GITHUB_OUTPUT
+          echo "TAG_VERSION=${TAG_VERSION}" >> $GITHUB_OUTPUT
+          echo "RELEASE_TITLE=${RELEASE_TITLE}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: bedrock-ffi-*
+          merge-multiple: false
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          mkdir -p package
+
+          # Linux
+          mkdir -p package/linux
+          cp artifacts/bedrock-ffi-linux/libbedrock_ffi.so package/linux/
+          cp artifacts/bedrock-ffi-linux/libbedrock_ffi.a package/linux/
+          (cd package/linux && tar czf ../bedrock-ffi-${VERSION}-linux-x86_64.tar.gz .)
+
+          # Windows
+          mkdir -p package/windows
+          cp artifacts/bedrock-ffi-windows/bedrock_ffi.dll package/windows/
+          cp artifacts/bedrock-ffi-windows/bedrock_ffi.dll.lib package/windows/
+          cp artifacts/bedrock-ffi-windows/bedrock_ffi.lib package/windows/
+          (cd package/windows && zip ../../bedrock-ffi-${VERSION}-windows-x86_64.zip *)
+
+          mv package/*.tar.gz package/*.zip artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.TAG_VERSION }}
+          name: ${{ steps.get_version.outputs.RELEASE_TITLE }}
+          draft: false
+          prerelease: ${{ github.event.inputs.release_type == 'development' }}
+          files: artifacts/bedrock-ffi-*
+          token: ${{ secrets.GITHUB_TOKEN }}

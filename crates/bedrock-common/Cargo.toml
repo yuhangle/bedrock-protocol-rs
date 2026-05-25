@@ -1,0 +1,6 @@
+[package]
+name = "bedrock-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared types, errors, and traits for the Bedrock protocol toolchain"
