@@ -816,6 +816,389 @@ pub extern "C" fn bedrock_nbt_from_network_into(
     }
 }
 
+/// Parse a binary (LE/BE) NBT CompoundTag into a pre-allocated handle.
+/// Expects standard binary NBT format with TAG_Compound header.
+/// Writes the number of bytes consumed to `out_consumed` on success.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_from_binary_into(
+    nbt: *mut FfiNbt,
+    data: *const u8,
+    len: usize,
+    little_endian: bool,
+    out_consumed: *mut usize,
+) -> i32 {
+    clear_error();
+    if nbt.is_null() || data.is_null() || out_consumed.is_null() {
+        set_error("null pointer".to_string());
+        return BEDROCK_ERR_INVALID_ARG;
+    }
+    let slice = unsafe { std::slice::from_raw_parts(data, len) };
+    let nbt = unsafe { &mut *nbt };
+    match bedrock_nbt::decode::from_binary_nbt(slice, little_endian) {
+        Ok((tag, consumed)) => {
+            nbt.inner = tag;
+            unsafe { *out_consumed = consumed; }
+            BEDROCK_SUCCESS
+        }
+        Err(e) => {
+            set_error(e.to_string());
+            BEDROCK_ERR_INVALID_DATA
+        }
+    }
+}
+
+/// Get the number of key-value entries in the compound.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_entry_count(nbt: *const FfiNbt) -> usize {
+    if nbt.is_null() { return 0; }
+    let nbt = unsafe { &*nbt };
+    nbt.inner.size()
+}
+
+/// Get the key at an index. Returns a pointer valid until the NBT handle is modified.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_entry_key_at(
+    nbt: *const FfiNbt,
+    index: usize,
+) -> *const c_char {
+    if nbt.is_null() { return std::ptr::null(); }
+    let nbt = unsafe { &*nbt };
+    let entries = nbt.inner.entries();
+    if index >= entries.len() { return std::ptr::null(); }
+    entries[index].0.as_ptr() as *const c_char
+}
+
+/// Copy the key at an index into a caller-provided buffer.
+/// Returns the required buffer size (including null terminator) in inout_len.
+/// If buffer is null or too small, returns BEDROCK_ERR_INVALID_ARG with needed size in inout_len.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_entry_key_copy(
+    nbt: *const FfiNbt,
+    index: usize,
+    buffer: *mut c_char,
+    inout_len: *mut usize,
+) -> i32 {
+    if nbt.is_null() || inout_len.is_null() {
+        return BEDROCK_ERR_INVALID_ARG;
+    }
+    let nbt = unsafe { &*nbt };
+    let entries = nbt.inner.entries();
+    if index >= entries.len() {
+        return BEDROCK_ERR_INVALID_DATA;
+    }
+    let key = entries[index].0.as_str();
+    let needed = key.len() + 1; // +1 for null terminator
+    if buffer.is_null() || unsafe { *inout_len } < needed {
+        unsafe { *inout_len = needed; }
+        return if buffer.is_null() { BEDROCK_SUCCESS } else { BEDROCK_ERR_INVALID_ARG };
+    }
+    unsafe {
+        std::ptr::copy_nonoverlapping(key.as_ptr() as *const c_char, buffer, key.len());
+        *buffer.add(key.len()) = 0;
+        *inout_len = needed;
+    }
+    BEDROCK_SUCCESS
+}
+
+/// Get the TagType (as u8) of the entry at index. Returns 0 (TAG_End) on error.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_entry_type_at(
+    nbt: *const FfiNbt,
+    index: usize,
+) -> i32 {
+    if nbt.is_null() { return 0; }
+    let nbt = unsafe { &*nbt };
+    let entries = nbt.inner.entries();
+    if index >= entries.len() { return 0; }
+    entries[index].1.tag_type() as u8 as i32
+}
+
+/// Get a byte (int8) value by key.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_get_byte(
+    nbt: *const FfiNbt,
+    key: *const c_char,
+    out: *mut i8,
+) -> i32 {
+    if nbt.is_null() || key.is_null() || out.is_null() {
+        return BEDROCK_ERR_INVALID_ARG;
+    }
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap_or("");
+    let nbt = unsafe { &*nbt };
+    match nbt.inner.get(key) {
+        Some(bedrock_nbt::Tag::Byte(v)) => {
+            unsafe { *out = *v; }
+            BEDROCK_SUCCESS
+        }
+        _ => BEDROCK_ERR_INVALID_DATA,
+    }
+}
+
+/// Get a short (int16) value by key.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_get_short(
+    nbt: *const FfiNbt,
+    key: *const c_char,
+    out: *mut i16,
+) -> i32 {
+    if nbt.is_null() || key.is_null() || out.is_null() {
+        return BEDROCK_ERR_INVALID_ARG;
+    }
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap_or("");
+    let nbt = unsafe { &*nbt };
+    match nbt.inner.get(key) {
+        Some(bedrock_nbt::Tag::Short(v)) => {
+            unsafe { *out = *v; }
+            BEDROCK_SUCCESS
+        }
+        _ => BEDROCK_ERR_INVALID_DATA,
+    }
+}
+
+/// Get a long (int64) value by key.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_get_long(
+    nbt: *const FfiNbt,
+    key: *const c_char,
+    out: *mut i64,
+) -> i32 {
+    if nbt.is_null() || key.is_null() || out.is_null() {
+        return BEDROCK_ERR_INVALID_ARG;
+    }
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap_or("");
+    let nbt = unsafe { &*nbt };
+    match nbt.inner.get(key) {
+        Some(bedrock_nbt::Tag::Long(v)) => {
+            unsafe { *out = *v; }
+            BEDROCK_SUCCESS
+        }
+        _ => BEDROCK_ERR_INVALID_DATA,
+    }
+}
+
+/// Get a float (f32) value by key.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_get_float(
+    nbt: *const FfiNbt,
+    key: *const c_char,
+    out: *mut f32,
+) -> i32 {
+    if nbt.is_null() || key.is_null() || out.is_null() {
+        return BEDROCK_ERR_INVALID_ARG;
+    }
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap_or("");
+    let nbt = unsafe { &*nbt };
+    match nbt.inner.get(key) {
+        Some(bedrock_nbt::Tag::Float(v)) => {
+            unsafe { *out = *v; }
+            BEDROCK_SUCCESS
+        }
+        _ => BEDROCK_ERR_INVALID_DATA,
+    }
+}
+
+/// Get a double (f64) value by key.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_get_double(
+    nbt: *const FfiNbt,
+    key: *const c_char,
+    out: *mut f64,
+) -> i32 {
+    if nbt.is_null() || key.is_null() || out.is_null() {
+        return BEDROCK_ERR_INVALID_ARG;
+    }
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap_or("");
+    let nbt = unsafe { &*nbt };
+    match nbt.inner.get(key) {
+        Some(bedrock_nbt::Tag::Double(v)) => {
+            unsafe { *out = *v; }
+            BEDROCK_SUCCESS
+        }
+        _ => BEDROCK_ERR_INVALID_DATA,
+    }
+}
+
+/// Get a nested CompoundTag by key. Returns a new handle that must be destroyed.
+/// Returns null if the key is not a CompoundTag.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_get_tag(
+    nbt: *const FfiNbt,
+    key: *const c_char,
+) -> *mut FfiNbt {
+    clear_error();
+    if nbt.is_null() || key.is_null() { return std::ptr::null_mut(); }
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap_or("");
+    let nbt = unsafe { &*nbt };
+    match nbt.inner.get(key) {
+        Some(bedrock_nbt::Tag::Compound(map)) => {
+            let child = NbtCompoundTag::from_map(map.clone());
+            Box::into_raw(Box::new(FfiNbt { inner: child }))
+        }
+        _ => std::ptr::null_mut(),
+    }
+}
+
+/// Get a byte array value by key.
+/// Returns a pointer to the data in `out_data` (must be freed with bedrock_free)
+/// and the length in `out_len`.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_get_byte_array(
+    nbt: *const FfiNbt,
+    key: *const c_char,
+    out_data: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    if nbt.is_null() || key.is_null() || out_data.is_null() || out_len.is_null() {
+        return BEDROCK_ERR_INVALID_ARG;
+    }
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap_or("");
+    let nbt = unsafe { &*nbt };
+    match nbt.inner.get(key) {
+        Some(bedrock_nbt::Tag::ByteArray(v)) => {
+            let len = v.len();
+            let buf = unsafe { libc::malloc(len) as *mut u8 };
+            if buf.is_null() {
+                set_error("memory allocation failed".to_string());
+                return BEDROCK_ERR_UNSUPPORTED;
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(v.as_ptr(), buf, len);
+                *out_data = buf;
+                *out_len = len;
+            }
+            BEDROCK_SUCCESS
+        }
+        _ => BEDROCK_ERR_INVALID_DATA,
+    }
+}
+
+/// Get an int array value by key.
+/// Returns a pointer to the data in `out_data` (must be freed with bedrock_free)
+/// and the count in `out_len`.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_get_int_array(
+    nbt: *const FfiNbt,
+    key: *const c_char,
+    out_data: *mut *mut i32,
+    out_len: *mut usize,
+) -> i32 {
+    if nbt.is_null() || key.is_null() || out_data.is_null() || out_len.is_null() {
+        return BEDROCK_ERR_INVALID_ARG;
+    }
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap_or("");
+    let nbt = unsafe { &*nbt };
+    match nbt.inner.get(key) {
+        Some(bedrock_nbt::Tag::IntArray(v)) => {
+            let len = v.len();
+            let buf = unsafe { libc::malloc(len * std::mem::size_of::<i32>()) as *mut i32 };
+            if buf.is_null() {
+                set_error("memory allocation failed".to_string());
+                return BEDROCK_ERR_UNSUPPORTED;
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(v.as_ptr(), buf, len);
+                *out_data = buf;
+                *out_len = len;
+            }
+            BEDROCK_SUCCESS
+        }
+        _ => BEDROCK_ERR_INVALID_DATA,
+    }
+}
+
+/// Get the size of a list by key.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_list_size(
+    nbt: *const FfiNbt,
+    key: *const c_char,
+) -> i32 {
+    if nbt.is_null() || key.is_null() { return -1; }
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap_or("");
+    let nbt = unsafe { &*nbt };
+    match nbt.inner.get(key) {
+        Some(bedrock_nbt::Tag::List(lst)) => lst.elements.len() as i32,
+        _ => -1,
+    }
+}
+
+/// Get the element type of a list (as TagType u8), or 0 if not a list.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_list_get_element_type(
+    nbt: *const FfiNbt,
+    key: *const c_char,
+) -> i32 {
+    if nbt.is_null() || key.is_null() { return 0; }
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap_or("");
+    let nbt = unsafe { &*nbt };
+    match nbt.inner.get(key) {
+        Some(bedrock_nbt::Tag::List(lst)) => lst.element_type as u8 as i32,
+        _ => 0,
+    }
+}
+
+/// Get a CompoundTag from a list at the given index. Returns a new handle.
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_list_get_tag_at(
+    nbt: *const FfiNbt,
+    key: *const c_char,
+    index: i32,
+) -> *mut FfiNbt {
+    clear_error();
+    if nbt.is_null() || key.is_null() { return std::ptr::null_mut(); }
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap_or("");
+    let nbt = unsafe { &*nbt };
+    match nbt.inner.get(key) {
+        Some(bedrock_nbt::Tag::List(lst)) => {
+            if index < 0 || index as usize >= lst.elements.len() { return std::ptr::null_mut(); }
+            match &lst.elements[index as usize] {
+                bedrock_nbt::Tag::Compound(map) => {
+                    let child = NbtCompoundTag::from_map(map.clone());
+                    Box::into_raw(Box::new(FfiNbt { inner: child }))
+                }
+                _ => std::ptr::null_mut(),
+            }
+        }
+        _ => std::ptr::null_mut(),
+    }
+}
+
+/// Get a string from a list at the given index. Uses buffer protocol (see bedrock_nbt_get_string).
+#[no_mangle]
+pub extern "C" fn bedrock_nbt_list_get_string_at(
+    nbt: *const FfiNbt,
+    key: *const c_char,
+    index: i32,
+    buffer: *mut c_char,
+    inout_len: *mut usize,
+) -> i32 {
+    if nbt.is_null() || key.is_null() || inout_len.is_null() {
+        return BEDROCK_ERR_INVALID_ARG;
+    }
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap_or("");
+    let nbt = unsafe { &*nbt };
+    let value = match nbt.inner.get(key) {
+        Some(bedrock_nbt::Tag::List(lst)) => {
+            if index < 0 || index as usize >= lst.elements.len() { return BEDROCK_ERR_INVALID_DATA; }
+            match &lst.elements[index as usize] {
+                bedrock_nbt::Tag::String(s) => s.clone(),
+                _ => return BEDROCK_ERR_INVALID_DATA,
+            }
+        }
+        _ => return BEDROCK_ERR_INVALID_DATA,
+    };
+    let needed = value.len() + 1;
+    if buffer.is_null() || unsafe { *inout_len } < needed {
+        unsafe { *inout_len = needed; }
+        return if buffer.is_null() { BEDROCK_SUCCESS } else { BEDROCK_ERR_INVALID_ARG };
+    }
+    unsafe {
+        std::ptr::copy_nonoverlapping(value.as_ptr() as *const c_char, buffer, value.len());
+        *buffer.add(value.len()) = 0;
+        *inout_len = needed;
+    }
+    BEDROCK_SUCCESS
+}
+
 // ---------------------------------------------------------------------------
 // Packet operations
 // ---------------------------------------------------------------------------

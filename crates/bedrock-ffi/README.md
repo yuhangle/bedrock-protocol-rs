@@ -112,7 +112,7 @@ uint32_t     id   = bedrock_packet_get_id(pkt);
 const char* name = bedrock_packet_get_name(pkt);
 ```
 
-### NBT 操作（18 个函数）
+### NBT 操作（35 个函数）
 
 ```c
 // 生命周期
@@ -138,8 +138,9 @@ bedrock_nbt_to_snbt(nbt);                   // SNBT 字符串（需 bedrock_free
 bedrock_nbt_write_to_stream(nbt, stream);   // 写入 BinaryStream
 bedrock_free(data);
 
-// 反序列化
-bedrock_nbt_from_network_into(nbt, data, len, &consumed);
+// 反序列化（解析到已存在的 nbt 句柄）
+bedrock_nbt_from_network_into(nbt, data, len, &consumed);  // Bedrock Network NBT
+bedrock_nbt_from_binary_into(nbt, data, len, little_endian, &consumed);  // 标准二进制 NBT
 
 // 查询
 bool empty = bedrock_nbt_empty(nbt);
@@ -149,9 +150,51 @@ bool has = bedrock_nbt_contains(nbt, "Name");
 int32_t int_val;
 bedrock_nbt_get_int(nbt, "count", &int_val);
 
+int8_t  byte_val;
+bedrock_nbt_get_byte(nbt, "byte_key", &byte_val);
+
+int16_t short_val;
+bedrock_nbt_get_short(nbt, "short_key", &short_val);
+
+int64_t long_val;
+bedrock_nbt_get_long(nbt, "long_key", &long_val);
+
+float  float_val;
+bedrock_nbt_get_float(nbt, "float_key", &float_val);
+
+double double_val;
+bedrock_nbt_get_double(nbt, "double_key", &double_val);
+
 char buf[256];
 size_t buf_len = sizeof(buf);
 bedrock_nbt_get_string(nbt, "name", buf, &buf_len);
+
+// 嵌套 CompoundTag（返回新句柄，需 bedrock_nbt_destroy）
+void* child = bedrock_nbt_get_tag(nbt, "child_key");
+
+// 数组读取（返回的 data 需 bedrock_free）
+uint8_t* ba_data; size_t ba_len;
+bedrock_nbt_get_byte_array(nbt, "byte_array_key", &ba_data, &ba_len);
+int32_t* ia_data; size_t ia_len;
+bedrock_nbt_get_int_array(nbt, "int_array_key", &ia_data, &ia_len);
+
+// 条目枚举
+size_t count = bedrock_nbt_entry_count(nbt);
+const char* key = bedrock_nbt_entry_key_at(nbt, index);
+int type = bedrock_nbt_entry_type_at(nbt, index);  // 0=End, 1=Byte, 2=Short, 3=Int, ...
+
+// 安全 key 复制（避免指针生命周期问题）
+char key_buf[256];
+size_t key_len = sizeof(key_buf);
+bedrock_nbt_entry_key_copy(nbt, index, key_buf, &key_len);
+
+// 列表查询
+int list_sz = bedrock_nbt_list_size(nbt, "list_key");
+int elem_type = bedrock_nbt_list_get_element_type(nbt, "list_key");
+void* elem = bedrock_nbt_list_get_tag_at(nbt, "list_key", index);  // Compound 元素
+char elem_buf[256];
+size_t elem_len = sizeof(elem_buf);
+bedrock_nbt_list_get_string_at(nbt, "list_key", index, elem_buf, &elem_len);  // String 元素
 ```
 
 ---
