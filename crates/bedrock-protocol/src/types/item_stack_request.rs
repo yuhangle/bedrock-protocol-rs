@@ -151,12 +151,43 @@ impl BedrockSerializable for ItemStackRequestAction {
         let action_type = ItemStackRequestActionType::from_i32(action_type_val as i32)
             .unwrap_or(ItemStackRequestActionType::Invalid);
 
-        let action_data = if matches!(action_type,
-            ItemStackRequestActionType::Take | ItemStackRequestActionType::Place
-        ) {
-            Some(ItemStackRequestActionTransferBase::read_from(stream)?)
-        } else {
-            None
+        let action_data = match action_type {
+            // Take/Place: amount + source + destination
+            ItemStackRequestActionType::Take | ItemStackRequestActionType::Place => {
+                Some(ItemStackRequestActionTransferBase::read_from(stream)?)
+            }
+            // Swap: source + destination (no amount)
+            ItemStackRequestActionType::Swap => {
+                let source = ItemStackRequestSlotInfo::read_from(stream)?;
+                let destination = ItemStackRequestSlotInfo::read_from(stream)?;
+                Some(ItemStackRequestActionTransferBase {
+                    amount: 0,
+                    source,
+                    destination,
+                })
+            }
+            // Drop/Destroy: source + amount + count_id (varint)
+            ItemStackRequestActionType::Drop | ItemStackRequestActionType::Destroy => {
+                let source = ItemStackRequestSlotInfo::read_from(stream)?;
+                let amount = stream.read_u8()?;
+                let _count_id = stream.read_varint()?;
+                Some(ItemStackRequestActionTransferBase {
+                    amount,
+                    source,
+                    destination: ItemStackRequestSlotInfo::default(),
+                })
+            }
+            // Create: amount
+            ItemStackRequestActionType::Create => {
+                let amount = stream.read_u8()?;
+                Some(ItemStackRequestActionTransferBase {
+                    amount,
+                    source: ItemStackRequestSlotInfo::default(),
+                    destination: ItemStackRequestSlotInfo::default(),
+                })
+            }
+            // Other action types: no additional data
+            _ => None,
         };
 
         Ok(Self { action_type, action_data })
